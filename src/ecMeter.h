@@ -19,12 +19,10 @@ class ECMeter
 
     private:
         AnalogDigitalConverter adc;
-        unsigned int AnalogSampleInterval=25,printInterval=700,tempSampleInterval=850; 
         unsigned int readings[NumberOfReadings];     
         byte index = 0;                  
         unsigned long AnalogValueTotal = 0;                 
         unsigned int AnalogAverage = 0,averageVoltage=0;               
-        unsigned long AnalogSampleTime,printTime,tempSampleTime;
         float temperature,ECcurrent;
 
 };

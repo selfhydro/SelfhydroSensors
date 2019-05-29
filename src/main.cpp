@@ -33,6 +33,8 @@ const char* mqtt_password = "";
 const char* clientID = "Ambient Temperature and Humidity Sensor";
 #elif EC_METER
 const char* clientID = "EC Meter";
+#elif WATER_TEMP
+const char* clientID = "Water Temperature Sensor";
 #endif
 
 WiFiClient wifiClient;
@@ -47,8 +49,6 @@ void waterTemperatureCallback(char* topic, byte* payload, unsigned int length) {
   for (int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
-  Serial.println();
-
   const int capacity = JSON_OBJECT_SIZE(3);
   StaticJsonDocument<capacity> waterTemperatureJSON;
   deserializeJson(waterTemperatureJSON, payload);
@@ -60,7 +60,9 @@ void reconnect() {
     Serial.print("Attempting MQTT connection...");
     if (client.connect(clientID)) {
       Serial.println("connected");
+      #if EC_METER
       client.subscribe(mqtt_water_temperature_topic);
+      #endif
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -199,8 +201,7 @@ void loop() {
     byte type_s;
     byte data[12];
     byte addr[8];
-    float celsius, fahrenheit;
-  
+
     if ( !ds.search(addr)) 
     {
       ds.reset_search();
@@ -216,7 +217,6 @@ void loop() {
     }
     Serial.println();
   
-    // the first ROM byte indicates which chip
     switch (addr[0]) 
     {
       case 0x10:
@@ -235,18 +235,17 @@ void loop() {
   
     ds.reset();
     ds.select(addr);
-    ds.write(0x44, 1);        // start conversion, with parasite power on at the end  
+    ds.write(0x44, 1);        
     delay(1000);
     present = ds.reset();
     ds.select(addr);    
-    ds.write(0xBE);         // Read Scratchpad
+    ds.write(0xBE);         
   
     for ( i = 0; i < 9; i++) 
     {           
       data[i] = ds.read();
     }
   
-    // Convert the data to actual temperature
     int16_t rawTemperature = (data[1] << 8) | data[0];
     if (type_s) {
       rawTemperature = rawTemperature << 3; // 9 bit resolution default
@@ -265,7 +264,7 @@ void loop() {
     }
     float waterTemperatureCelcius = (float)rawTemperature / 16.0;
     Serial.print("  Temperature = ");
-    Serial.print(celsius);
+    Serial.print(waterTemperatureCelcius);
     Serial.print(" Celsius, ");
 
     const int capacity = JSON_OBJECT_SIZE(3);
