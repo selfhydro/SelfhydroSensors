@@ -19,10 +19,16 @@ WaterLevelSensor waterLevelSensor = WaterLevelSensor();
 ECMeter ecMeter = ECMeter();
 
 const char* ssid = "Chalk-wifi";
-int16_t deviceID = 0;
-const int sleepTimeSec = 600; // 10 minutes
+// const char* ssid = "twguest";
 
+uint16_t deviceID = 0;
+const int sleepTimeSec = 900; // 10 minutes
+const float voltageDividerConstant = 4.5;
+float currentBatteryVoltage;
+
+// const char* mqtt_server = "10.242.124.62";
 const char* mqtt_server = "water.local";
+
 const char* mqtt_ambient_temperature_topic = "/state/ambient_temperature";
 const char* mqtt_ambient_humidity_topic = "/state/ambient_humidity";
 const char* mqtt_water_temperature_topic = "/state/water_temperature";
@@ -105,25 +111,27 @@ void setupAmbientTempAndHumidity() {
 }
 
 void publishState(float state, char* label, const char* topic) {
-  const int capacity = JSON_OBJECT_SIZE(3);
-    StaticJsonDocument<capacity> stateJson;
-    stateJson[label] = state;
-    char stateJsonCStr[128];
-    serializeJson(stateJson, stateJsonCStr);
-    if (client.publish(topic, stateJsonCStr)) {
-      Serial.println("State measured and message sent");
-    } else {
-      Serial.println("Message failed to send via mqtt");
-      reconnect();
-      client.publish(topic, stateJsonCStr);
-    }
+  const int capacity = JSON_OBJECT_SIZE(4);
+  StaticJsonDocument<capacity> stateJson;
+  stateJson[label] = state;
+  stateJson["batteryVoltage"] = currentBatteryVoltage;
+  stateJson["deviceId"] = deviceID;
+  char stateJsonCStr[128];
+  serializeJson(stateJson, stateJsonCStr);
+  if (client.publish(topic, stateJsonCStr)) {
+    Serial.println("State measured and message sent");
+  } else {
+    Serial.println("Message failed to send via mqtt");
+    reconnect();
+    client.publish(topic, stateJsonCStr);
+  }
 }
 
 void getDeviceId() {
-  byte firstSection = EEPROM.read(0);
-  byte secondSection = EEPROM.read(1);
+  byte firstPartID = EEPROM.read(0);
+  byte secondPartID = EEPROM.read(1);
 
-  deviceID = (int16_t)secondSection << 8 | (int16_t)firstSection;
+  deviceID = (uint16_t)secondPartID << 8 | (uint16_t)firstPartID;
 }
 
 void addDeviceID() {
@@ -131,15 +139,23 @@ void addDeviceID() {
   long secondPartID = random(255);
   EEPROM.write(0, (uint8_t)firstPartID);
   EEPROM.write(1, (uint8_t)firstPartID);
-  Serial.print("Sensor ID: "); Serial.print(firstPartID); Serial.print(secondPartID);  
+  EEPROM.commit();
+  Serial.print("Sensor ID: "); Serial.print(firstPartID); Serial.println(secondPartID); 
+  deviceID = (uint16_t)secondPartID << 8 | (uint16_t)firstPartID;
 }
 
+float getBatteryVoltage(){
+  pinMode(A0, INPUT);
+  float raw = analogRead(A0);
+  float volt=raw * (voltageDividerConstant/1023.0);
+  return volt;
+}
 
 void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
   randomSeed(analogRead(0));
-
+  Serial.println("starting up again");
   while (! Serial) {
     delay(1);
   }
@@ -149,10 +165,10 @@ void setup() {
 
   // Connect to the WiFi
   WiFi.begin(ssid, WIFI_PASSWORD);
-  IPAddress ip(192,168,0,ipAddress);   
-  IPAddress gateway(192,168,0,1);   
-  IPAddress subnet(255,255,255,255);   
-  WiFi.config(ip, gateway, subnet);
+  // IPAddress ip(192,168,0,ipAddress);   
+  // IPAddress gateway(192,168,0,1);   
+  // IPAddress subnet(255,255,255,0);   
+  // WiFi.config(ip, gateway, subnet);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -161,19 +177,19 @@ void setup() {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-
   getDeviceId();
   if (deviceID == 0) {
     addDeviceID();
   }
-
-  Serial.print(deviceID);
+  Serial.println(deviceID);
   
+  currentBatteryVoltage = getBatteryVoltage();
+  Serial.print("Battery voltage ");Serial.println(currentBatteryVoltage, 2);
+
   #ifdef AMBIENT_TEMP
     setupAmbientTempAndHumidity();
     float humidity = sensor.readHumidity();
     float temperature = sensor.readTemperature();
-
     Serial.print("Humidity:    ");
     Serial.print(humidity, 2);
     Serial.print("\tTemperature: ");
@@ -286,9 +302,9 @@ void setup() {
     publishState(waterTemperatureCelcius, "temperature", mqtt_water_temperature_topic);
   #endif
 
-  //Sleep
-   Serial.println("ESP8266 in sleep mode");
-   ESP.deepSleep(sleepTimeSec * 1000000); 
+  delay(500);
+  Serial.println("Going into sleep mode");
+  ESP.deepSleep(sleepTimeSec * 1000000); 
 }
 
 void loop() {
